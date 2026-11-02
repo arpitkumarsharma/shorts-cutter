@@ -1,0 +1,174 @@
+<!DOCTYPE html>
+<html lang="hi">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Shorts Cutter | Home Beauty Parlour</title>
+<style>
+:root{color-scheme:light dark;--bg:#fdf6f8;--fg:#2a1820;--card:#fff;--line:#e8cfd8;--ac:#b0245a;--acfg:#fff;--mut:#7a5c68}
+@media (prefers-color-scheme:dark){:root{--bg:#1a1015;--fg:#f6e9ee;--card:#25161d;--line:#43293a;--ac:#f06b9c;--acfg:#1a1015;--mut:#bd9aa9}}
+*{box-sizing:border-box}
+body{margin:0;padding:20px 16px 48px;background:var(--bg);color:var(--fg);font:16px/1.5 system-ui,"Noto Sans Devanagari",sans-serif;max-width:620px;margin-inline:auto}
+h1{font:700 28px/1.2 Georgia,"Noto Serif Devanagari",serif;margin:0 0 4px}
+p.sub{margin:0 0 20px;color:var(--mut)}
+.box{background:var(--card);border:1px solid var(--line);border-radius:12px;padding:16px;margin-bottom:14px}
+label{display:block;font-weight:600;margin:12px 0 4px}
+label:first-child{margin-top:0}
+select,input[type=file],textarea{width:100%;padding:10px;border:1px solid var(--line);border-radius:8px;background:var(--bg);color:var(--fg);font:inherit}
+textarea{min-height:76px;resize:vertical}
+button{width:100%;padding:14px;border:0;border-radius:10px;background:var(--ac);color:var(--acfg);font:700 17px inherit;cursor:pointer}
+button:disabled{opacity:.45;cursor:not-allowed}
+button:focus-visible,select:focus-visible,textarea:focus-visible,input:focus-visible,a:focus-visible{outline:3px solid var(--ac);outline-offset:2px}
+.hint{font-size:14px;color:var(--mut);margin:6px 0 0}
+#st{font-weight:600;margin:12px 0 0;min-height:24px}
+canvas{display:block;width:150px;aspect-ratio:9/16;border-radius:8px;background:#000;margin:12px auto 0}
+.clip{display:flex;gap:12px;align-items:center;margin-top:12px}
+.clip video{width:84px;border-radius:6px;background:#000}
+.clip a{color:var(--ac);font-weight:700}
+</style>
+</head>
+<body>
+<h1>Shorts Cutter</h1>
+<p class="sub">Lamba video chuno, 9:16 clips download karo. Sab kuch aapke browser me hota hai, kuch upload nahi hota.</p>
+
+<div class="box">
+  <label for="file">Video (MP4)</label>
+  <input id="file" type="file" accept="video/*">
+  <p class="hint" id="info">Pehle video chuno.</p>
+
+  <label for="mode">Clip kaise banane hain</label>
+  <select id="mode">
+    <option value="auto">Barabar tukde (auto)</option>
+    <option value="manual">Mere timestamps (manual)</option>
+  </select>
+
+  <label for="len">Auto: har clip kitne ka</label>
+  <select id="len">
+    <option value="60">1 minute</option>
+    <option value="120">2 minute</option>
+    <option value="180">3 minute</option>
+  </select>
+
+  <label for="ranges">Manual: har line me ek clip</label>
+  <textarea id="ranges" placeholder="1:16-2:15&#10;0:00-0:41&#10;2:38-3:30"></textarea>
+
+  <label for="fit">9:16 me kaise fit ho</label>
+  <select id="fit">
+    <option value="blur">Poora video beech me, upar-neeche blur</option>
+    <option value="crop">Poori screen bharo (kinare kat jayenge)</option>
+  </select>
+
+  <label for="q">Quality</label>
+  <select id="q">
+    <option value="720">720 x 1280 (tez)</option>
+    <option value="1080">1080 x 1920 (behtar)</option>
+  </select>
+</div>
+
+<button id="go" disabled>Clips banao</button>
+<p id="st" role="status"></p>
+<canvas id="cv" width="720" height="1280"></canvas>
+<div id="out"></div>
+<p class="hint">Clip banate waqt ye tab khula aur saamne rakho, warna browser recording rok deta hai. Clip utni der me banega jitna uska time hai. Chrome ya Edge laptop par sabse behtar chalta hai.</p>
+
+<script>
+const $=id=>document.getElementById(id);
+const v=document.createElement('video');v.playsInline=true;v.preload='auto';
+const cv=$('cv'),ctx=cv.getContext('2d');
+const bg=document.createElement('canvas');bg.width=54;bg.height=96;
+const bctx=bg.getContext('2d');
+let url,ac,dest,busy=false;
+
+const fmt=s=>Math.floor(s/60)+':'+String(Math.floor(s%60)).padStart(2,'0');
+const toSec=s=>s.trim().split(':').reduce((a,x)=>a*60+parseFloat(x),0);
+
+$('file').onchange=e=>{
+  const f=e.target.files[0];if(!f)return;
+  if(url)URL.revokeObjectURL(url);
+  url=URL.createObjectURL(f);v.src=url;
+  v.onloadedmetadata=()=>{
+    $('info').textContent='Video: '+fmt(v.duration)+' ('+v.videoWidth+'x'+v.videoHeight+')';
+    $('go').disabled=false;
+  };
+  v.onerror=()=>{$('info').textContent='Ye video khul nahi paya. MP4 (H.264) try karo.';$('go').disabled=true};
+};
+
+function plan(){
+  const D=v.duration;
+  if($('mode').value==='manual'){
+    return $('ranges').value.split('\n').map(l=>l.trim()).filter(Boolean).map(l=>{
+      const p=l.split('-').map(toSec);return [p[0],Math.min(p[1],D)];
+    }).filter(r=>r[1]>r[0]&&r[0]>=0);
+  }
+  const L=+$('len').value,out=[];
+  for(let s=0;s<D;s+=L){const e=Math.min(s+L,D);if(e-s>=10||!out.length)out.push([s,e]);}
+  return out;
+}
+
+function draw(W,H,fit){
+  const vw=v.videoWidth,vh=v.videoHeight,k=Math.max(W/vw,H/vh);
+  if(fit==='blur'){
+    const kb=Math.max(54/vw,96/vh);
+    bctx.drawImage(v,(54-vw*kb)/2,(96-vh*kb)/2,vw*kb,vh*kb);
+    ctx.imageSmoothingEnabled=true;ctx.drawImage(bg,0,0,W,H);
+    ctx.fillStyle='rgba(0,0,0,.25)';ctx.fillRect(0,0,W,H);
+    const f=W/vw;ctx.drawImage(v,0,(H-vh*f)/2,W,vh*f);
+  }else{
+    ctx.drawImage(v,(W-vw*k)/2,(H-vh*k)/2,vw*k,vh*k);
+  }
+}
+
+async function seek(t){
+  if(Math.abs(v.currentTime-t)<0.05)return;
+  const p=new Promise(r=>v.addEventListener('seeked',r,{once:true}));
+  v.currentTime=t;await p;
+}
+
+async function record(a,b,n,total,W,H,fit){
+  v.pause();await seek(a);
+  const ms=new MediaStream([...cv.captureStream(30).getVideoTracks(),...dest.stream.getAudioTracks()]);
+  const mime=['video/mp4;codecs=avc1.42E01E,mp4a.40.2','video/webm;codecs=vp9,opus','video/webm'].find(m=>MediaRecorder.isTypeSupported(m));
+  const mr=new MediaRecorder(ms,{mimeType:mime,videoBitsPerSecond:W>800?8e6:5e6});
+  const chunks=[];mr.ondataavailable=e=>e.data.size&&chunks.push(e.data);
+  const stopped=new Promise(r=>mr.onstop=r);
+  mr.start(1000);await v.play();
+  await new Promise(res=>{
+    const tick=()=>{
+      draw(W,H,fit);
+      $('st').textContent='Clip '+n+'/'+total+' ban rahi hai: '+fmt(v.currentTime-a)+' / '+fmt(b-a);
+      if(v.currentTime>=b||v.ended){res();return}
+      requestAnimationFrame(tick);
+    };tick();
+  });
+  v.pause();mr.stop();await stopped;
+  const blob=new Blob(chunks,{type:mime.split(';')[0]});
+  const ext=mime.startsWith('video/mp4')?'mp4':'webm';
+  const u=URL.createObjectURL(blob),name='short_'+n+'.'+ext;
+  const d=document.createElement('div');d.className='box clip';
+  d.innerHTML='<video controls src="'+u+'"></video><div><div>Clip '+n+' ('+fmt(a)+' se '+fmt(b)+')</div><a href="'+u+'" download="'+name+'">Download '+name+'</a></div>';
+  $('out').appendChild(d);
+}
+
+$('go').onclick=async()=>{
+  if(busy)return;
+  const clips=plan();
+  if(!clips.length){$('st').textContent='Koi sahi clip nahi mili. Manual me aise likho: 1:16-2:15';return}
+  busy=true;$('go').disabled=true;$('out').innerHTML='';
+  const H=+$('q').value===1080?1920:1280,W=H===1920?1080:720;
+  cv.width=W;cv.height=H;
+  if(!ac){
+    ac=new AudioContext();dest=ac.createMediaStreamDestination();
+    ac.createMediaElementSource(v).connect(dest);
+  }
+  await ac.resume();
+  try{
+    for(let i=0;i<clips.length;i++)await record(clips[i][0],clips[i][1],i+1,clips.length,W,H,$('fit').value);
+    $('st').textContent='Ho gaya. '+clips.length+' clip(s) neeche hain, download kar lo.';
+  }catch(err){
+    $('st').textContent='Error: '+err.message+'. Chrome ya Edge me laptop par try karo.';
+  }
+  busy=false;$('go').disabled=false;
+};
+</script>
+</body>
+</html>
